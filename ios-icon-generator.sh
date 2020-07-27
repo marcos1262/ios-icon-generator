@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Copyright (C) 2018 smallmuou <smallmuou@163.com>
 # 
@@ -22,67 +22,36 @@
 
 set -e
 
-spushd() {
-     pushd "$1" 2>&1> /dev/null
-}
-
-spopd() {
-     popd 2>&1> /dev/null
-}
-
 info() {
-     local green="\033[1;32m"
-     local normal="\033[0m"
-     echo -e "[${green}INFO${normal}] $1"
-}
-
-cmdcheck() {
-    command -v $1>/dev/null 2>&1 || { error >&2 "Please install command $1 first."; exit 1; }   
+  local green="\033[1;32m"
+  local normal="\033[0m"
+  echo -e "[${green}INFO${normal}] $1"
 }
 
 error() {
-     local red="\033[1;31m"
-     local normal="\033[0m"
-     echo -e "[${red}ERROR${normal}] $1"
+  local red="\033[1;31m"
+  local normal="\033[0m"
+  echo -e "[${red}ERROR${normal}] $1"
 }
 
 warn() {
-     local yellow="\033[1;33m"
-     local normal="\033[0m"
-     echo -e "[${yellow}WARNING${normal}] $1"
+  local yellow="\033[1;33m"
+  local normal="\033[0m"
+  echo -e "[${yellow}WARNING${normal}] $1"
 }
 
-yesno() {
-    while true;do
-    read -p "$1 (y/n)" yn
-    case $yn in
-        [Yy]) $2;break;;
-        [Nn]) exit;;
-        *) echo 'please enter y or n.'
-    esac
-done
-}
-
-curdir() {
-    if [ ${0:0:1} = '/' ] || [ ${0:0:1} = '~' ]; then
-        echo "$(dirname $0)"
-    elif [ -L $0 ];then
-        name=`readlink $0`
-        echo $(dirname $name)
-    else
-        echo "`pwd`/$(dirname $0)"
-    fi
-}
-
-myos() {
-    echo `uname|tr "[:upper:]" "[:lower:]"`
+cmdcheck() {
+  if ! command -v $1 &>/dev/null; then
+    error "Please install command $1 first." >&2
+    exit 1
+  fi   
 }
 
 #########################################
 ###           GROBLE DEFINE           ###
 #########################################
 
-VERSION=2.0.0
+VERSION=2.1.0
 AUTHOR=smallmuou
 
 #########################################
@@ -90,8 +59,8 @@ AUTHOR=smallmuou
 #########################################
 
 usage() {
-prog=`basename $0`
-cat << EOF
+  prog=$(basename "$0")
+  cat << EOF
 $prog version $VERSION by $AUTHOR
 
 USAGE: $prog [OPTIONS] srcfile dstpath
@@ -104,24 +73,30 @@ DESCRIPTION:
 
 OPTIONS:
     -h      Show this help message and exit
+    -n      Name for the generated icons, default is Icon
 
 EXAMPLES:
     $prog 1024.png ~/123
 
 EOF
-exit 1
+  exit 1
 }
 
-while getopts 'h' arg; do
-    case $arg in
-        h)
-            usage
-            ;;
-        ?)
-            # OPTARG
-            usage
-            ;;
-    esac
+ICON="Icon"
+
+while getopts 'hn:' arg; do
+  case $arg in
+    h)
+      usage
+      ;;
+    n)
+      ICON=$OPTARG
+      ;;
+    ?)
+      # OPTARG
+      usage
+      ;;
+  esac
 done
 
 shift $(($OPTIND - 1))
@@ -137,20 +112,30 @@ src_file=$1
 dst_path=$2
 
 # check source file
-[ ! -f "$src_file" ] && { error "The source file $src_file does not exist, please check it."; exit -1; }
+if ! test -f "$src_file"; then
+  error "The source file $src_file does not exist, please check it." >&2
+  exit 128
+fi
 
 # check width and height 
-src_width=`sips -g pixelWidth $src_file 2>/dev/null|awk '/pixelWidth:/{print $NF}'`
-src_height=`sips -g pixelHeight $src_file 2>/dev/null|awk '/pixelHeight:/{print $NF}'`
+src_width=$(sips -g pixelWidth $src_file 2>/dev/null | awk '/pixelWidth:/{print $NF}')
+src_height=$(sips -g pixelHeight $src_file 2>/dev/null | awk '/pixelHeight:/{print $NF}')
 
-[ -z "$src_width" ] &&  { error "The source file $src_file is not a image file, please check it."; exit -1; }
+if [ -z "$src_width" ]; then
+  error "The source file $src_file is not a image file, please check it." >&2
+  exit 128
+fi
 
-if [ $src_width -ne $src_height ];then
-    warn "The height and width of the source image are different, will cause image deformation."
+if (($src_width != $src_height)); then
+  warn "The height and width of the source image are different, will cause image deformation."
+fi
+
+if grep -q yes <(sips -g hasAlpha "$src_file"); then
+  warn "The source image contains an alpha channel, which may cause your app to be rejected.  Use ImageMagick to remove: mogrify -alpha off \"$src_file\""
 fi
 
 # create dst directory 
-[ ! -d "$dst_path" ] && mkdir -p "$dst_path"
+mkdir -p "$dst_path"
 
 # ios sizes refer to https://developer.apple.com/design/human-interface-guidelines/ios/icons-and-images/app-icon/
 # macos sizes refer to https://developer.apple.com/design/human-interface-guidelines/macos/icons-and-images/app-icon/
@@ -215,6 +200,3 @@ do
 done
 
 info "Congratulation. All icons for iOS/macOS/watchOS APP are generate to the directory: $dst_path."
-
-IFS=$OLD_IFS
-
